@@ -39,20 +39,26 @@ async function soraFetch(url, options = {}) {
     }
     
     try {
-        return await fetchv2(url, headers, method, body);
+        console.log('soraFetch: Calling fetchv2 for ' + url);
+        const res = await fetchv2(url, headers, method, body);
+        console.log('soraFetch: fetchv2 success, length = ' + (res ? res.length : 0));
+        return res;
     } catch(e) {
+        console.log('soraFetch: fetchv2 failed, error: ' + e.message + '. Trying fallback fetch...');
         try {
             const res = await fetch(url, {
                 method: method,
                 headers: headers,
                 body: body
             });
-            if (typeof res.text === 'function') {
-                return await res.text();
+            let textRes = res;
+            if (res && typeof res.text === 'function') {
+                textRes = await res.text();
             }
-            return res;
+            console.log('soraFetch: fallback fetch success, length = ' + (textRes ? textRes.length : 0));
+            return textRes;
         } catch(error) {
-            console.log('soraFetch error: ' + error.message);
+            console.log('soraFetch: fallback fetch error: ' + error.message);
             return null;
         }
     }
@@ -65,6 +71,7 @@ async function soraFetch(url, options = {}) {
  */
 async function searchResults(keyword) {
     try {
+        console.log('searchResults: keyword = ' + keyword);
         const encodedKeyword = encodeURIComponent(keyword);
         const responseText = await soraFetch('https://jkanime.net/buscar?q=' + encodedKeyword);
         if (!responseText) return JSON.stringify([]);
@@ -80,6 +87,7 @@ async function searchResults(keyword) {
             });
         }
         
+        console.log('searchResults: found ' + results.length + ' results');
         return JSON.stringify(results);
     } catch (error) {
         console.log('searchResults error: ' + error.message);
@@ -94,6 +102,7 @@ async function searchResults(keyword) {
  */
 async function extractDetails(url) {
     try {
+        console.log('extractDetails: url = ' + url);
         const responseText = await soraFetch(url);
         if (!responseText) return JSON.stringify({ description: 'No description available', aliases: 'Estado: Unknown', airdate: 'Aired: Unknown' });
 
@@ -106,6 +115,7 @@ async function extractDetails(url) {
         const statusMatch = responseText.match(/<li><span>\s*Estado:\s*<\/span>\s*<div[^>]*>([^<]+)<\/div>/);
         const status = statusMatch ? statusMatch[1].trim() : 'Unknown';
 
+        console.log('extractDetails: successfully parsed details');
         return JSON.stringify({
             description: description,
             aliases: 'Estado: ' + status,
@@ -128,17 +138,29 @@ async function extractDetails(url) {
  */
 async function extractEpisodes(url) {
     try {
+        console.log('extractEpisodes: url = ' + url);
         const html = await soraFetch(url);
-        if (!html) return JSON.stringify([]);
+        if (!html) {
+            console.log('extractEpisodes: html content is empty');
+            return JSON.stringify([]);
+        }
+        
+        console.log('extractEpisodes: html length = ' + html.length);
+        console.log('extractEpisodes: html start = ' + html.substring(0, 200));
 
-        const slug = url.replace('https://jkanime.net/', '').replace(/\//g, '').trim();
+        const slugMatch = url.match(/https?:\/\/(?:www\.)?jkanime\.net\/([^\/]+)/);
+        const slug = slugMatch ? slugMatch[1] : '';
+        console.log('extractEpisodes: slug = ' + slug);
+
         const csrfToken = html.match(/name="csrf-token"\s+content="([^"]+)"/)?.[1];
         const animeId = html.match(/data-anime="(\d+)"/)?.[1];
+        console.log('extractEpisodes: csrfToken = ' + csrfToken + ', animeId = ' + animeId);
 
         // 1. Try to fetch total episodes via JKanime's AJAX episodes endpoint
         if (csrfToken && animeId) {
             try {
                 const ajaxUrl = 'https://jkanime.net/ajax/episodes/' + animeId + '/1';
+                console.log('extractEpisodes: making AJAX POST to ' + ajaxUrl);
                 const responseText = await soraFetch(ajaxUrl, {
                     method: 'POST',
                     headers: {
@@ -147,6 +169,7 @@ async function extractEpisodes(url) {
                     },
                     body: '_token=' + encodeURIComponent(csrfToken)
                 });
+                console.log('extractEpisodes: AJAX response = ' + responseText);
                 const data = JSON.parse(responseText);
                 if (data && data.total) {
                     const episodes = [];
@@ -156,6 +179,7 @@ async function extractEpisodes(url) {
                             number: i
                         });
                     }
+                    console.log('extractEpisodes: returning ' + episodes.length + ' episodes from AJAX');
                     return JSON.stringify(episodes);
                 }
             } catch (e) {
@@ -166,6 +190,7 @@ async function extractEpisodes(url) {
         // 2. Fallback: Parse the static number of episodes (works only for completed series)
         const epMatch = html.match(/<li><span>\s*Episodios:\s*<\/span>\s*([^<]+)<\/li>/);
         const totalEps = epMatch ? parseInt(epMatch[1].trim(), 10) : 0;
+        console.log('extractEpisodes: totalEps from fallback = ' + totalEps);
         const episodes = [];
         if (totalEps > 0) {
             for (let i = 1; i <= totalEps; i++) {
@@ -175,6 +200,7 @@ async function extractEpisodes(url) {
                 });
             }
         }
+        console.log('extractEpisodes: returning ' + episodes.length + ' episodes from fallback');
         return JSON.stringify(episodes);
     } catch (error) {
         console.log('extractEpisodes error: ' + error.message);
@@ -189,6 +215,7 @@ async function extractEpisodes(url) {
  */
 async function extractStreamUrl(url) {
     try {
+        console.log('extractStreamUrl: url = ' + url);
         const html = await soraFetch(url);
         if (!html) return JSON.stringify({ streams: [] });
 
@@ -265,6 +292,7 @@ async function extractStreamUrl(url) {
         // Wait for Desu/Magi iframe pages to resolve
         await Promise.all(iframePromises);
 
+        console.log('extractStreamUrl: resolved ' + streams.length + ' stream URLs');
         return JSON.stringify({ streams: streams });
     } catch (error) {
         console.log('extractStreamUrl error: ' + error.message);
