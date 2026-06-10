@@ -27,12 +27,25 @@ function base64Decode(str) {
 
 /** Fetch wrapper that uses Sora's custom fetchv2 and falls back to standard fetch.
  */
-async function soraFetch(url, options = { headers: {}, method: 'GET', body: null }) {
+async function soraFetch(url, options = {}) {
+    const headers = options.headers ?? {};
+    const method = options.method ?? 'GET';
+    const body = options.body ?? null;
+    
+    // Inject default browser User-Agent to prevent Cloudflare/403 blocks
+    if (!headers['User-Agent'] && !headers['user-agent']) {
+        headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36';
+    }
+    
     try {
-        return await fetchv2(url, options.headers ?? {}, options.method ?? 'GET', options.body ?? null);
+        return await fetchv2(url, headers, method, body);
     } catch(e) {
         try {
-            const res = await fetch(url, options);
+            const res = await fetch(url, {
+                method: method,
+                headers: headers,
+                body: body
+            });
             if (typeof res.text === 'function') {
                 return await res.text();
             }
