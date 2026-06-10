@@ -229,6 +229,11 @@ async function extractEpisodes(url) {
  * @param {string} url - The URL of the episode page.
  * @returns {Promise<string>} - A JSON string with a list of stream server options.
  */
+/** extractStreamUrl
+ * Extracts all stream server options for a specific episode page URL.
+ * @param {string} url - The URL of the episode page.
+ * @returns {Promise<string>} - A JSON string with a list of stream server options.
+ */
 async function extractStreamUrl(url) {
     try {
         console.log('extractStreamUrl: url = ' + url);
@@ -236,7 +241,7 @@ async function extractStreamUrl(url) {
         if (!html) return JSON.stringify({ streams: [] });
 
         const streams = [];
-        const iframePromises = [];
+        const promises = [];
 
         // 1. Resolve Desu and Magi players from video[] iframe matches
         const videoRegex = /video\[(\d+)\]\s*=\s*['"]<iframe[^>]*?src="([^"]+)"/g;
@@ -246,7 +251,7 @@ async function extractStreamUrl(url) {
             const iframeSrc = videoMatch[2];
             const title = idx === '0' ? 'Desu' : idx === '1' ? 'Magi' : 'Video ' + idx;
 
-            iframePromises.push((async () => {
+            promises.push((async () => {
                 try {
                     const playerHtml = await soraFetch(iframeSrc);
                     if (!playerHtml) return;
@@ -286,17 +291,41 @@ async function extractStreamUrl(url) {
                 for (let i = 0; i < serversList.length; i++) {
                     const s = serversList[i];
                     const serverName = s.server;
-                    if (serverName === 'Mediafire') continue; // Mediafire is downloads only
+                    // Skip unsupported download-only or end-to-end encrypted servers (Mediafire, Mega)
+                    if (serverName === 'Mediafire' || serverName === 'Mega') continue;
                     
                     const remoteB64 = s.remote;
                     if (remoteB64) {
                         const decodedUrl = base64Decode(remoteB64).trim();
                         if (decodedUrl) {
-                            streams.push({
-                                title: serverName,
-                                streamUrl: decodedUrl,
-                                headers: { 'Referer': 'https://jkanime.net/' }
-                            });
+                            promises.push((async () => {
+                                try {
+                                    let resolvedUrl = null;
+                                    if (serverName === 'Mp4upload') {
+                                        resolvedUrl = await extractMp4upload(decodedUrl);
+                                    } else if (serverName === 'Streamwish') {
+                                        resolvedUrl = await extractStreamwish(decodedUrl);
+                                    } else if (serverName === 'VOE') {
+                                        resolvedUrl = await extractVOE(decodedUrl);
+                                    } else if (serverName === 'Vidhide') {
+                                        resolvedUrl = await extractVidhide(decodedUrl);
+                                    } else if (serverName === 'Doodstream') {
+                                        resolvedUrl = await extractDoodstream(decodedUrl);
+                                    } else if (serverName === 'Streamtape') {
+                                        resolvedUrl = await extractStreamtape(decodedUrl);
+                                    }
+                                    
+                                    if (resolvedUrl) {
+                                        streams.push({
+                                            title: serverName,
+                                            streamUrl: resolvedUrl,
+                                            headers: { 'Referer': decodedUrl }
+                                        });
+                                    }
+                                } catch (err) {
+                                    console.log('Failed to extract stream for ' + serverName + ': ' + err.message);
+                                }
+                            })());
                         }
                     }
                 }
@@ -305,8 +334,8 @@ async function extractStreamUrl(url) {
             }
         }
 
-        // Wait for Desu/Magi iframe pages to resolve
-        await Promise.all(iframePromises);
+        // Wait for all player and server extractions to finish
+        await Promise.all(promises);
 
         console.log('extractStreamUrl: resolved ' + streams.length + ' stream URLs');
         return JSON.stringify({ streams: streams });
@@ -314,4 +343,242 @@ async function extractStreamUrl(url) {
         console.log('extractStreamUrl error: ' + error.message);
         return JSON.stringify({ streams: [] });
     }
+}
+
+/** --- Unbaser class for Dean Edwards Packer --- */
+class Unbaser {
+    constructor(base) {
+        this.ALPHABET = {
+            62: "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            95: "' !\"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~'",
+        };
+        this.dictionary = {};
+        this.base = base;
+        if (36 < base && base < 62) {
+            this.ALPHABET[base] = this.ALPHABET[base] ||
+                this.ALPHABET[62].substring(0, base);
+        }
+        if (2 <= base && base <= 36) {
+            this.unbase = (value) => parseInt(value, base);
+        } else {
+            try {
+                const alphabet = this.ALPHABET[base] || "";
+                for (let i = 0; i < alphabet.length; i++) {
+                    this.dictionary[alphabet.charAt(i)] = i;
+                }
+            } catch (er) {
+                console.log("Unbaser initialization failed: " + er.message);
+            }
+            this.unbase = this._dictunbaser;
+        }
+    }
+    _dictunbaser(value) {
+        let ret = 0;
+        const valStr = String(value);
+        for (let i = 0; i < valStr.length; i++) {
+            const cipher = valStr.charAt(valStr.length - 1 - i);
+            ret = ret + (Math.pow(this.base, i) * (this.dictionary[cipher] || 0));
+        }
+        return ret;
+    }
+}
+
+/** --- Unpacks Dean Edwards Packer obfuscated scripts --- */
+function unpack(source) {
+    let payload, symtab, radix, count;
+    const juicers = [
+        /}\('(.*)',\s*(\d+|\[\]),\s*(\d+),\s*'(.*)'\.split\('\|'\),\s*(\d+),\s*(.*)\)\)/,
+        /}\('(.*)',\s*(\d+|\[\]),\s*(\d+),\s*'(.*)'\.split\('\|'\)/
+    ];
+    for (let i = 0; i < juicers.length; i++) {
+        const args = juicers[i].exec(source);
+        if (args) {
+            payload = args[1];
+            symtab = args[4].split("|");
+            radix = parseInt(args[2]);
+            count = parseInt(args[3]);
+            break;
+        }
+    }
+    if (!payload || count !== symtab.length) {
+        return source;
+    }
+    let unbase;
+    try {
+        unbase = new Unbaser(radix);
+    } catch (e) {
+        return source;
+    }
+    function lookup(match) {
+        let idx;
+        if (radix === 1) {
+            idx = parseInt(match);
+        } else {
+            idx = unbase.unbase(match);
+        }
+        return symtab[idx] || match;
+    }
+    return payload.replace(/\b\w+\b/g, lookup);
+}
+
+/** --- Helper to decode Base64 safely with padding check --- */
+function safeBase64Decode(str) {
+    let s = str.trim().replace(/-/g, '+').replace(/_/g, '/');
+    while (s.length % 4) {
+        s += '=';
+    }
+    return base64Decode(s);
+}
+
+/** --- Mp4upload Extractor --- */
+async function extractMp4upload(embedUrl) {
+    const html = await soraFetch(embedUrl);
+    if (!html) return null;
+    const match = html.match(/src:\s*"([^"]+)"/);
+    return match ? match[1] : null;
+}
+
+/** --- Streamwish Extractor --- */
+async function extractStreamwish(embedUrl) {
+    const html = await soraFetch(embedUrl);
+    if (!html) return null;
+    const obfuscatedScript = html.match(/<script[^>]*>\s*(eval\(function\(p,a,c,k,e,d.*?\)[\s\S]*?)<\/script>/);
+    if (obfuscatedScript) {
+        const unpacked = unpack(obfuscatedScript[1]);
+        const m3u8Match = unpacked.match(/(https?:\/\/[^\s"'`]+master\.m3u8[^\s"'`]*)/) || unpacked.match(/(https?:\/\/[^\s"'`]+\.m3u8[^\s"'`]*)/);
+        return m3u8Match ? m3u8Match[1] : null;
+    }
+    return null;
+}
+
+/** --- Vidhide Extractor --- */
+async function extractVidhide(embedUrl) {
+    return await extractStreamwish(embedUrl);
+}
+
+/** --- VOE Extractor --- */
+function voeRot13(str) {
+    return str.replace(/[a-zA-Z]/g, function (c) {
+        return String.fromCharCode(
+            (c <= "Z" ? 90 : 122) >= (c = c.charCodeAt(0) + 13) ? c : c - 26
+        );
+    });
+}
+function voeRemovePatterns(str) {
+    const patterns = ["@$", "^^", "~@", "%?", "*~", "!!", "#&"];
+    let result = str;
+    for (let i = 0; i < patterns.length; i++) {
+        result = result.split(patterns[i]).join("");
+    }
+    return result;
+}
+function voeShiftChars(str, shift) {
+    let result = "";
+    for (let i = 0; i < str.length; i++) {
+        result += String.fromCharCode(str.charCodeAt(i) - shift);
+    }
+    return result;
+}
+
+async function extractVOE(embedUrl) {
+    let html = await soraFetch(embedUrl);
+    if (!html) return null;
+    
+    // Follow window.location redirect if present
+    const titleMatch = html.match(/<title>(.*?)<\/title>/);
+    if (titleMatch && titleMatch[1].toLowerCase().includes("redirect")) {
+        const redirectRegexes = [
+            /<meta http-equiv="refresh" content="0;url=(.*?)"/,
+            /window\.location\.href\s*=\s*["'](.*?)["']/,
+            /window\.location\.replace\s*\(\s*["'](.*?)["']\s*\)/,
+            /window\.location\s*=\s*["'](.*?)["']/,
+            /window\.location\.assign\s*\(\s*["'](.*?)["']\s*\)/,
+            /top\.location\s*=\s*["'](.*?)["']/,
+            /top\.location\.replace\s*\(\s*["'](.*?)["']\s*\)/
+        ];
+        for (let i = 0; i < redirectRegexes.length; i++) {
+            const match = html.match(redirectRegexes[i]);
+            if (match && match[1] && match[1].startsWith("http")) {
+                console.log("VOE: following redirect to " + match[1]);
+                html = await soraFetch(match[1]);
+                break;
+            }
+        }
+    }
+    
+    if (!html) return null;
+    
+    const jsonScriptMatch = html.match(/<script[^>]+type=["']application\/json["'][^>]*>([\s\S]*?)<\/script>/i);
+    if (!jsonScriptMatch) return null;
+    
+    const obfuscatedJson = jsonScriptMatch[1].trim();
+    const data = JSON.parse(obfuscatedJson);
+    if (!Array.isArray(data) || typeof data[0] !== "string") return null;
+    
+    const obfuscatedString = data[0];
+    const step1 = voeRot13(obfuscatedString);
+    const step2 = voeRemovePatterns(step1);
+    const step3 = safeBase64Decode(step2);
+    const step4 = voeShiftChars(step3, 3);
+    const step5 = step4.split("").reverse().join("");
+    const step6 = safeBase64Decode(step5);
+    
+    const result = JSON.parse(step6);
+    if (result && typeof result === "object") {
+        return result.direct_access_url || (result.source && result.source[0] && (result.source[0].direct_access_url || result.source[0].file)) || null;
+    }
+    return null;
+}
+
+/** --- Doodstream Extractor --- */
+function randomStr(length) {
+    const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    let result = "";
+    for (let i = 0; i < length; i++) {
+        result += characters.charAt(Math.floor(Math.random() * characters.length));
+    }
+    return result;
+}
+
+async function extractDoodstream(embedUrl) {
+    const html = await soraFetch(embedUrl);
+    if (!html) return null;
+    
+    const domainMatch = embedUrl.match(/https?:\/\/([^\/]+)/);
+    if (!domainMatch) return null;
+    const streamDomain = domainMatch[1];
+    
+    const md5Match = html.match(/'\/pass_md5\/(.*?)',/);
+    if (!md5Match) return null;
+    const md5Path = md5Match[1];
+    const token = md5Path.substring(md5Path.lastIndexOf("/") + 1);
+    const expiryTimestamp = new Date().valueOf();
+    const random = randomStr(10);
+    
+    const passUrl = "https://" + streamDomain + "/pass_md5/" + md5Path;
+    const passResponse = await soraFetch(passUrl, {
+        headers: { "Referer": embedUrl }
+    });
+    if (!passResponse) return null;
+    
+    const videoUrl = passResponse.trim() + random + "?token=" + token + "&expiry=" + expiryTimestamp;
+    return videoUrl;
+}
+
+/** --- Streamtape Extractor --- */
+async function extractStreamtape(embedUrl) {
+    const html = await soraFetch(embedUrl);
+    if (!html) return null;
+    
+    const domainMatch = embedUrl.match(/https?:\/\/([^\/]+)/);
+    if (!domainMatch) return null;
+    const streamDomain = domainMatch[1];
+    
+    const scriptMatch = html.match(/document\.getElementById\('robotlink'\)\.innerHTML\s*=\s*'([^']+)'\s*\+\s*'([^']+)'/);
+    if (!scriptMatch) return null;
+    
+    const p1 = scriptMatch[1];
+    const p2 = scriptMatch[2].substring(3);
+    const streamUrl = "https://" + streamDomain + p1 + p2;
+    return streamUrl;
 }
