@@ -15,6 +15,7 @@ function base64Decode(str) {
     
     var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
     var output = '';
+    var char;
     str = String(str).replace(/=+$/, '');
     if (str.length % 4 === 1) {
         return '';

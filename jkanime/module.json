@@ -3,11 +3,11 @@
   "iconUrl": "https://www.google.com/s2/favicons?sz=128&domain_url=jkanime.net",
   "author": {
     "name": "Alexrica",
-    "icon": "https://github.com/google.png",
-    "url": "https://github.com/google"
+    "icon": "https://github.com/alexrica.png",
+    "url": "https://github.com/alexrica"
   },
   "version": "1.0.0",
-  "language": "Spanish",
+  "language": "Spanish (SUB)",
   "streamType": "HLS",
   "quality": "720p",
   "baseUrl": "https://jkanime.net/",
