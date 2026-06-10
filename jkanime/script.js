@@ -41,18 +41,18 @@ async function soraFetch(url, options = {}) {
     try {
         console.log('soraFetch: Calling fetchv2 for ' + url);
         const res = await fetchv2(url, headers, method, body);
-        console.log('soraFetch: typeof res = ' + typeof res);
-        if (res !== null && typeof res === 'object') {
-            console.log('soraFetch: res keys = ' + Object.keys(res).join(', '));
-            console.log('soraFetch: res has text() = ' + (typeof res.text === 'function'));
-            console.log('soraFetch: res has json() = ' + (typeof res.json === 'function'));
-            if (res.body !== undefined) {
-                console.log('soraFetch: res.body type = ' + typeof res.body);
+        let textRes = res;
+        if (res) {
+            if (typeof res.text === 'function') {
+                textRes = await res.text();
+            } else if (typeof res === 'object' && res._data !== undefined) {
+                textRes = res._data;
+            } else if (typeof res === 'object' && res.body !== undefined) {
+                textRes = res.body;
             }
-        } else {
-            console.log('soraFetch: res value = ' + res);
         }
-        return res;
+        console.log('soraFetch: fetchv2 success, text length = ' + (textRes ? textRes.length : 0));
+        return textRes;
     } catch(e) {
         console.log('soraFetch: fetchv2 failed, error: ' + e.message + '. Trying fallback fetch...');
         try {
@@ -62,10 +62,16 @@ async function soraFetch(url, options = {}) {
                 body: body
             });
             let textRes = res;
-            if (res && typeof res.text === 'function') {
-                textRes = await res.text();
+            if (res) {
+                if (typeof res.text === 'function') {
+                    textRes = await res.text();
+                } else if (typeof res === 'object' && res._data !== undefined) {
+                    textRes = res._data;
+                } else if (typeof res === 'object' && res.body !== undefined) {
+                    textRes = res.body;
+                }
             }
-            console.log('soraFetch: fallback fetch success, length = ' + (textRes ? textRes.length : 0));
+            console.log('soraFetch: fallback fetch success, text length = ' + (textRes ? textRes.length : 0));
             return textRes;
         } catch(error) {
             console.log('soraFetch: fallback fetch error: ' + error.message);
