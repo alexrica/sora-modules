@@ -164,7 +164,7 @@ async function extractEpisodes(url) {
         }
 
         // 2. Fallback: Parse the static number of episodes (works only for completed series)
-        const epMatch = html.match(/<li><span>\s*Episodios:\s*<\/span>\s*([^<]+)</li>/);
+        const epMatch = html.match(/<li><span>\s*Episodios:\s*<\/span>\s*([^<]+)<\/li>/);
         const totalEps = epMatch ? parseInt(epMatch[1].trim(), 10) : 0;
         const episodes = [];
         if (totalEps > 0) {
