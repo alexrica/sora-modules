@@ -1,6 +1,6 @@
 # Sora Modules: JKanime
 
-This repository contains custom streaming modules for **Sora** and **Luna** media players. The main module is **JKanime** (version `1.0.0`), a Spanish-subtitled anime provider.
+Here lays custom streaming modules for **Sora** and **Luna** media players. The only module is **JKanime** (version `1.0.0`), a Spanish-subtitled anime provider (for the moment).
 
 Below is a detailed guide on the advanced features, scraping strategies, and decryption algorithms implemented in this module that are **not covered in the official Sora Module Creator Guide**.
 
