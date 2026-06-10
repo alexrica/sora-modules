@@ -41,7 +41,17 @@ async function soraFetch(url, options = {}) {
     try {
         console.log('soraFetch: Calling fetchv2 for ' + url);
         const res = await fetchv2(url, headers, method, body);
-        console.log('soraFetch: fetchv2 success, length = ' + (res ? res.length : 0));
+        console.log('soraFetch: typeof res = ' + typeof res);
+        if (res !== null && typeof res === 'object') {
+            console.log('soraFetch: res keys = ' + Object.keys(res).join(', '));
+            console.log('soraFetch: res has text() = ' + (typeof res.text === 'function'));
+            console.log('soraFetch: res has json() = ' + (typeof res.json === 'function'));
+            if (res.body !== undefined) {
+                console.log('soraFetch: res.body type = ' + typeof res.body);
+            }
+        } else {
+            console.log('soraFetch: res value = ' + res);
+        }
         return res;
     } catch(e) {
         console.log('soraFetch: fetchv2 failed, error: ' + e.message + '. Trying fallback fetch...');
