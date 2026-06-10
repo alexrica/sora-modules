@@ -12,7 +12,7 @@
   "quality": "720p",
   "baseUrl": "https://jkanime.net/",
   "searchBaseUrl": "https://jkanime.net/buscar?q=%s",
-  "scriptUrl": "script.js",
+  "scriptUrl": "https://raw.githubusercontent.com/alexrica/sora-modules/refs/heads/main/jkanime/script.js",
   "type": "anime",
   "downloadSupport": false,
   "asyncJS": true,
